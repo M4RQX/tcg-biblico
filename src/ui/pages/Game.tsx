@@ -209,9 +209,15 @@ function PlayerZone({
 
 function CenterStrip() {
   const state = useGameStore((s) => s.state)!;
+  const mode = useGameStore((s) => s.mode);
+  const myRole = useGameStore((s) => s.myRole);
   const dispatch = useGameStore((s) => s.dispatch);
   const last5 = state.log.slice(-5).reverse();
   const me = state.jogadores[state.turnoDe];
+
+  // Online: so mostra controlos se for o teu turno.
+  const podeJogar = mode === 'online' ? myRole === state.turnoDe : true;
+
   const retirarDisponivel = (() => {
     if (state.fase !== 'acao' || !me.emConfronto || me.companhia.length === 0) return null;
     const def = getCard(me.emConfronto.defId);
@@ -224,11 +230,16 @@ function CenterStrip() {
     <div className="flex items-center gap-4 px-4 py-3 bg-stone-200 border-y border-stone-300">
       <div className="font-serif">
         Turno <span className="font-bold">{state.numeroTurno}</span> · Vez de{' '}
-        <span className="font-bold text-amber-700">{state.turnoDe}</span> · Fase{' '}
-        <span className="italic">{state.fase}</span>
+        <span className="font-bold text-amber-700">{state.turnoDe}</span>
+        {mode === 'online' && (
+          <span className="ml-2 text-xs italic text-stone-600">
+            (tu = <span className="font-bold">{myRole}</span>)
+          </span>
+        )}
+        {' '}· Fase <span className="italic">{state.fase}</span>
       </div>
       <div className="flex gap-2">
-        {state.fase === 'aurora' && (
+        {podeJogar && state.fase === 'aurora' && (
           <button
             className="px-3 py-1.5 bg-amber-600 text-stone-50 rounded text-sm hover:bg-amber-500"
             onClick={() => dispatch({ type: 'AURORA_DRAW' })}
@@ -236,7 +247,7 @@ function CenterStrip() {
             Aurora (comprar)
           </button>
         )}
-        {state.fase === 'acao' && (
+        {podeJogar && state.fase === 'acao' && (
           <button
             className="px-3 py-1.5 bg-stone-700 text-stone-50 rounded text-sm hover:bg-stone-600"
             onClick={() => dispatch({ type: 'END_TURN' })}
@@ -244,7 +255,7 @@ function CenterStrip() {
             Passar turno
           </button>
         )}
-        {retirarDisponivel && (
+        {podeJogar && retirarDisponivel && (
           <button
             className="px-3 py-1.5 bg-stone-500 text-stone-50 rounded text-sm hover:bg-stone-400"
             onClick={() => dispatch({ type: 'RETIRE', novoIid: retirarDisponivel.novoIid })}
@@ -252,6 +263,11 @@ function CenterStrip() {
           >
             Retirar (custo {retirarDisponivel.custo})
           </button>
+        )}
+        {!podeJogar && (
+          <span className="px-3 py-1.5 text-xs text-stone-600 italic">
+            Aguarda a vez do adversário...
+          </span>
         )}
       </div>
       <ul className="flex-1 text-[11px] text-stone-700 space-y-0.5 overflow-hidden max-h-16">
@@ -267,22 +283,48 @@ function CenterStrip() {
 
 export default function Game() {
   const state = useGameStore((s) => s.state);
+  const mode = useGameStore((s) => s.mode);
+  const myRole = useGameStore((s) => s.myRole);
   if (!state) return null;
 
-  if (state.pendingHandoff) {
+  // Online: nunca handoff (cada jogador no seu device); perspectiva fixa.
+  // Hot-seat: handoff entre turnos; perspectiva alterna.
+  if (mode === 'hotseat' && state.pendingHandoff) {
     return <HandoffOverlay proximoJogador={state.turnoDe} />;
   }
 
-  const showP2OnTop = state.turnoDe === 'P1';
-  const top: PlayerId = showP2OnTop ? 'P2' : 'P1';
-  const bottom: PlayerId = showP2OnTop ? 'P1' : 'P2';
+  let top: PlayerId;
+  let bottom: PlayerId;
+  let revealTop: boolean;
+  let revealBottom: boolean;
+  let isActiveTop: boolean;
+  let isActiveBottom: boolean;
+
+  if (mode === 'online' && (myRole === 'P1' || myRole === 'P2')) {
+    // Perspectiva fixa: meu lado em baixo, adversario em cima.
+    bottom = myRole;
+    top = myRole === 'P1' ? 'P2' : 'P1';
+    revealBottom = true;
+    revealTop = false;
+    isActiveBottom = state.turnoDe === bottom;
+    isActiveTop = false; // adversario nunca clicavel localmente
+  } else {
+    // Hot-seat (ou espectador online): bottom = vez actual, top = adversario.
+    const showP2OnTop = state.turnoDe === 'P1';
+    top = showP2OnTop ? 'P2' : 'P1';
+    bottom = showP2OnTop ? 'P1' : 'P2';
+    revealBottom = state.turnoDe === bottom;
+    revealTop = false;
+    isActiveBottom = state.turnoDe === bottom;
+    isActiveTop = state.turnoDe === top;
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
       {state.vencedor && <EndScreen state={state} />}
-      <PlayerZone pid={top}    revealHand={false}                          isActive={state.turnoDe === top} />
+      <PlayerZone pid={top}    revealHand={revealTop}    isActive={isActiveTop} />
       <CenterStrip />
-      <PlayerZone pid={bottom} revealHand={state.turnoDe === bottom}        isActive={state.turnoDe === bottom} />
+      <PlayerZone pid={bottom} revealHand={revealBottom} isActive={isActiveBottom} />
     </div>
   );
 }
