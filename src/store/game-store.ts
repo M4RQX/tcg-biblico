@@ -1,45 +1,50 @@
 import { create } from 'zustand';
-import { PartySocket } from 'partysocket';
+import Peer, { type DataConnection } from 'peerjs';
 import type { Action, GameState, PlayerId } from '../engine/types';
 import { applyAction, createInitialState } from '../engine/engine';
 import { DECKS } from '../data/decks';
 
 export type Mode = 'hotseat' | 'online' | null;
 
-interface PartyRole {
-  myRole: PlayerId | 'spectator';
-}
+interface PartyRole { myRole: PlayerId | 'spectator'; }
 
 interface GameStoreState {
   state: GameState | null;
   mode: Mode;
-  // UI ephemeral selection
   selectedHandIdx: number | null;
   selectedAttackIdx: number | null;
-  // Online-only
+  // Online (P2P)
   roomId: string | null;
   myRole: PlayerId | 'spectator' | null;
-  socket: PartySocket | null;
+  peer: Peer | null;
+  conn: DataConnection | null;       // host: conexao ao guest; guest: conexao ao host
   connecting: boolean;
   connectionError: string | null;
   presentPlayers: Array<{ id: string; role: PlayerId | 'spectator' }>;
 
-  // Hot-seat
   startHotseat: (seed?: string) => void;
-  // Online
-  connectOnline: (roomId: string) => Promise<PartyRole>;
+  connectOnline: (roomId: string, asHost: boolean) => Promise<PartyRole>;
   startOnlineGame: () => void;
-  // Common
   dispatch: (a: Action) => void;
   reset: () => void;
   selectHandCard: (idx: number | null) => void;
   selectAttack: (idx: number | null) => void;
 }
 
-// Host do PartyKit — em produção lê da env via build-time.
-// Em dev local, usa localhost:1999 (default do partykit dev).
-const PARTYKIT_HOST: string =
-  (import.meta as any).env?.VITE_PARTYKIT_HOST || 'localhost:1999';
+// Prefixo para evitar colisao com IDs aleatorios de outras apps no broker publico PeerJS.
+const PEER_PREFIX = 'tcgb-';
+
+// --- protocolo entre host e guest ---
+type Msg =
+  | { type: 'ROLE'; myRole: PlayerId | 'spectator' }
+  | { type: 'STATE'; state: GameState }
+  | { type: 'ACTION'; action: Action }
+  | { type: 'PRESENT'; players: Array<{ id: string; role: PlayerId | 'spectator' }> };
+
+function safeSend(conn: DataConnection | null, msg: Msg) {
+  if (!conn || !conn.open) return;
+  conn.send(msg);
+}
 
 export const useGameStore = create<GameStoreState>((set, get) => ({
   state: null,
@@ -48,7 +53,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   selectedAttackIdx: null,
   roomId: null,
   myRole: null,
-  socket: null,
+  peer: null,
+  conn: null,
   connecting: false,
   connectionError: null,
   presentPlayers: [],
@@ -62,76 +68,192 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ state: s, mode: 'hotseat', selectedHandIdx: null, selectedAttackIdx: null });
   },
 
-  connectOnline: (roomId) => {
+  connectOnline: (roomId, asHost) => {
     return new Promise<PartyRole>((resolve, reject) => {
-      // Fecha socket existente
-      get().socket?.close();
+      // Cleanup anterior
+      try { get().conn?.close(); } catch { /* ignore */ }
+      try { get().peer?.destroy(); } catch { /* ignore */ }
+
+      const peerId = PEER_PREFIX + roomId;
       set({
         mode: 'online',
         roomId,
-        socket: null,
-        myRole: null,
-        state: null,
-        connecting: true,
-        connectionError: null,
-        presentPlayers: [],
+        peer: null, conn: null,
+        myRole: null, state: null,
+        connecting: true, connectionError: null,
+        presentPlayers: asHost
+          ? [{ id: 'host', role: 'P1' }]
+          : [],
       });
 
       let resolved = false;
-      const sock = new PartySocket({
-        host: PARTYKIT_HOST,
-        room: roomId,
-      });
-
-      sock.addEventListener('open', () => {
-        set({ socket: sock, connecting: false });
-      });
-
-      sock.addEventListener('error', () => {
+      const failTimer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          set({ connecting: false, connectionError: 'Erro de ligacao ao servidor.' });
-          reject(new Error('socket error'));
+          set({ connecting: false, connectionError: 'Tempo esgotado a ligar.' });
+          reject(new Error('timeout'));
         }
-      });
+      }, 15000);
 
-      sock.addEventListener('close', () => {
-        set({ socket: null });
-      });
+      if (asHost) {
+        // P1 (host): cria peer com ID fixo
+        const peer = new Peer(peerId, { debug: 1 });
 
-      sock.addEventListener('message', (ev: MessageEvent) => {
-        let m: any;
-        try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.type === 'ROLE') {
-          set({ myRole: m.myRole });
+        peer.on('open', () => {
+          set({ peer, myRole: 'P1', connecting: false });
           if (!resolved) {
             resolved = true;
-            resolve({ myRole: m.myRole });
+            clearTimeout(failTimer);
+            resolve({ myRole: 'P1' });
           }
-        } else if (m.type === 'STATE') {
-          set({ state: m.state, selectedHandIdx: null, selectedAttackIdx: null });
-        } else if (m.type === 'PLAYERS') {
-          set({ presentPlayers: m.players });
-        } else if (m.type === 'ERROR') {
-          set({ connectionError: m.error });
-        }
-      });
+        });
+
+        peer.on('error', (err: { type?: string; message?: string }) => {
+          const msg =
+            err.type === 'unavailable-id' ? 'Codigo de sala ja em uso. Tenta outro.'
+            : err.type === 'network'        ? 'Erro de rede.'
+            : err.message || 'Erro PeerJS.';
+          set({ connectionError: msg });
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(failTimer);
+            set({ connecting: false });
+            reject(err);
+          }
+        });
+
+        peer.on('connection', (incoming: DataConnection) => {
+          // Aceita apenas 1 jogador (P2). Se ja houver, fecha o novo (sera spectator simples).
+          if (get().conn?.open) {
+            // segunda conexao -> spectator
+            incoming.on('open', () => {
+              safeSend(incoming, { type: 'ROLE', myRole: 'spectator' });
+              const cur = get().state;
+              if (cur) safeSend(incoming, { type: 'STATE', state: cur });
+            });
+            return;
+          }
+          incoming.on('open', () => {
+            set({
+              conn: incoming,
+              presentPlayers: [
+                { id: 'host', role: 'P1' },
+                { id: incoming.peer, role: 'P2' },
+              ],
+            });
+            safeSend(incoming, { type: 'ROLE', myRole: 'P2' });
+            safeSend(incoming, {
+              type: 'PRESENT',
+              players: [
+                { id: 'host', role: 'P1' },
+                { id: incoming.peer, role: 'P2' },
+              ],
+            });
+            const cur = get().state;
+            if (cur) safeSend(incoming, { type: 'STATE', state: cur });
+          });
+          incoming.on('data', (raw: unknown) => {
+            const m = raw as Msg;
+            if (m?.type === 'ACTION') {
+              const cur = get().state;
+              if (!cur) return;
+              if (cur.turnoDe !== 'P2') return;
+              const next = applyAction(cur, m.action);
+              const next2 = { ...next, pendingHandoff: false };
+              set({ state: next2, selectedHandIdx: null, selectedAttackIdx: null });
+              safeSend(get().conn, { type: 'STATE', state: next2 });
+            }
+          });
+          incoming.on('close', () => {
+            set({
+              conn: null,
+              presentPlayers: [{ id: 'host', role: 'P1' }],
+              connectionError: 'O outro jogador saiu.',
+            });
+          });
+        });
+
+      } else {
+        // P2 (guest): conecta ao peer do host
+        const peer = new Peer({ debug: 1 });
+
+        peer.on('open', () => {
+          const c = peer.connect(peerId, { reliable: true });
+
+          c.on('open', () => {
+            set({ peer, conn: c, connecting: false });
+            // role chega via mensagem ROLE do host
+          });
+
+          c.on('data', (raw: unknown) => {
+            const m = raw as Msg;
+            if (m?.type === 'ROLE') {
+              set({ myRole: m.myRole });
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(failTimer);
+                resolve({ myRole: m.myRole });
+              }
+            } else if (m?.type === 'STATE') {
+              set({ state: m.state, selectedHandIdx: null, selectedAttackIdx: null });
+            } else if (m?.type === 'PRESENT') {
+              set({ presentPlayers: m.players });
+            }
+          });
+
+          c.on('error', (err: { message?: string }) => {
+            set({ connectionError: err?.message || 'Erro na conexao.' });
+          });
+
+          c.on('close', () => {
+            set({ connectionError: 'Liga\u00e7\u00e3o fechada.', conn: null });
+          });
+        });
+
+        peer.on('error', (err: { type?: string; message?: string }) => {
+          const msg =
+            err.type === 'peer-unavailable' ? 'Sala nao encontrada. Verifica o codigo.'
+            : err.type === 'network'         ? 'Erro de rede.'
+            : err.message || 'Erro PeerJS.';
+          set({ connectionError: msg });
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(failTimer);
+            set({ connecting: false });
+            reject(err);
+          }
+        });
+      }
     });
   },
 
   startOnlineGame: () => {
-    const s = get().socket;
-    if (!s) return;
-    s.send(JSON.stringify({ type: 'START' }));
+    const { myRole, conn } = get();
+    if (myRole !== 'P1' || !conn?.open) return;
+    const s = createInitialState(
+      DECKS.apostolos(),
+      DECKS.filisteus(),
+      `s-${get().roomId}-${Date.now()}`,
+    );
+    const s2 = { ...s, pendingHandoff: false };
+    set({ state: s2, selectedHandIdx: null, selectedAttackIdx: null });
+    safeSend(conn, { type: 'STATE', state: s2 });
   },
 
   dispatch: (a) => {
-    const { mode, state, socket, myRole } = get();
+    const { mode, state, conn, myRole } = get();
     if (mode === 'online') {
-      if (!socket) return;
-      // No online, so envia se for a tua vez
-      if (state && myRole !== state.turnoDe) return;
-      socket.send(JSON.stringify({ type: 'ACTION', action: a }));
+      if (!state) return;
+      if (state.turnoDe !== myRole) return;
+      if (myRole === 'P1') {
+        // host: aplica localmente e faz broadcast
+        const next = { ...applyAction(state, a), pendingHandoff: false };
+        set({ state: next, selectedHandIdx: null, selectedAttackIdx: null });
+        safeSend(conn, { type: 'STATE', state: next });
+      } else {
+        // guest: envia para o host
+        safeSend(conn, { type: 'ACTION', action: a });
+      }
       return;
     }
     // hotseat
@@ -140,13 +262,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   reset: () => {
-    get().socket?.close();
+    try { get().conn?.close(); } catch { /* ignore */ }
+    try { get().peer?.destroy(); } catch { /* ignore */ }
     set({
       state: null,
       mode: null,
       roomId: null,
       myRole: null,
-      socket: null,
+      peer: null,
+      conn: null,
       connecting: false,
       connectionError: null,
       presentPlayers: [],
@@ -160,7 +284,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 }));
 
 export function makeRoomCode(): string {
-  // 5 letras maiusculas, sem vogais ambiguas (sem I,O,U,Q para nao confundir)
   const alpha = 'ABCDEFGHJKLMNPRSTVWXYZ';
   let s = '';
   for (let i = 0; i < 5; i++) s += alpha[Math.floor(Math.random() * alpha.length)];

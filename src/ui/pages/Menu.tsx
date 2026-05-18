@@ -36,7 +36,7 @@ export default function Menu() {
     const code = makeRoomCode();
     setJoining(true);
     try {
-      await connectOnline(code);
+      await connectOnline(code, true);
       window.location.hash = code;
     } catch {
       /* erro tratado no store */
@@ -50,7 +50,7 @@ export default function Menu() {
     if (!/^[A-Z]{5}$/.test(code)) return;
     setJoining(true);
     try {
-      await connectOnline(code);
+      await connectOnline(code, false);
       window.location.hash = code;
     } catch {
       /* erro tratado no store */
