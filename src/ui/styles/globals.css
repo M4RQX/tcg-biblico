@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-family: theme('fontFamily.sans'); }
+  body { @apply bg-stone-100 text-stone-900; }
+  h1, h2, h3, h4 { font-family: theme('fontFamily.serif'); }
+}
+
+@layer components {
+  .card-3d {
+    transform-style: preserve-3d;
+    transition: transform 0.4s ease;
+  }
+  .card-3d.flipped { transform: rotateY(180deg); }
+  .card-face {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  .card-back-face { transform: rotateY(180deg); }
+}
