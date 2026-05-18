@@ -19,10 +19,19 @@ export default {
         canaa:      { 50: '#e9efe7', 500: '#3f6b4a', 900: '#17321f' },
         roma:       { 50: '#ece8e2', 500: '#6b6056', 900: '#2b251f' },
         biblia: {
-          capa: '#1f2a3a',
-          capaEscura: '#0d1420',
-          dourado: '#caa14a',
-          douradoBrilho: '#e8c66a',
+          capa: '#8a8a8a',
+          capaEscura: '#6e6e6e',
+          capaClara: '#a3a3a3',
+          tetragrama: '#2a2a2a',
+          tetragramaSombra: '#1a1a1a',
+          texto: '#3d3d3d',
+          borda: '#5a5a5a',
+        },
+        // mesa de jogo (felt)
+        mesa: {
+          DEFAULT: '#1a1612',
+          claro: '#241e18',
+          accent: '#3a3024',
         },
       },
     },

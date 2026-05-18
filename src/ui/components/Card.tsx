@@ -171,50 +171,63 @@ export function Card({ def, instance, size = 'md', selected, faded, onClick, onA
 export function CardBack({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   const dims = size === 'sm' ? 'w-28 h-40' : size === 'lg' ? 'w-52 h-80' : 'w-40 h-60';
   return (
-    <div className={`${dims} relative rounded-md overflow-hidden border-2 border-amber-700/40 shadow-md`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-biblia-capa via-biblia-capaEscura to-biblia-capa" />
+    <div className={`${dims} relative rounded-md overflow-hidden border border-biblia-borda shadow-lg bg-biblia-capa`}>
+      {/* Brilho lateral muito subtil (vinheta) */}
       <div
-        className="absolute inset-0 opacity-20"
+        className="absolute inset-0"
         style={{
-          backgroundImage:
-            'repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 6px)',
+          background:
+            'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.08) 0%, transparent 55%, rgba(0,0,0,0.18) 100%)',
         }}
       />
-      <div className="absolute inset-2 border border-biblia-dourado/60 rounded-sm" />
-      <div className="absolute inset-3 border border-biblia-dourado/30 rounded-sm" />
+      {/* Padrão de "tecido" subtilíssimo */}
+      <div
+        className="absolute inset-0 opacity-25 mix-blend-multiply pointer-events-none"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle, rgba(0,0,0,0.25) 0.5px, transparent 0.5px)',
+          backgroundSize: '4px 4px',
+        }}
+      />
+      {/* Moldura embutida */}
+      <div className="absolute inset-[6px] border border-biblia-tetragramaSombra/40 rounded-sm" />
+      <div className="absolute inset-[9px] border border-white/15 rounded-sm" />
 
-      <div className="absolute inset-0 flex flex-col items-center justify-between py-4">
-        <div className="text-center text-biblia-dourado">
-          <div className="font-serif text-[9px] tracking-[0.18em] uppercase opacity-90">
+      <div className="absolute inset-0 flex flex-col items-center justify-between py-5">
+        <div className="text-center text-biblia-texto">
+          <div className="font-serif text-[8px] tracking-[0.22em] uppercase opacity-80">
             Tradução do
           </div>
-          <div className="font-serif text-[11px] font-bold tracking-[0.2em] uppercase">
+          <div className="font-serif text-[11px] font-bold tracking-[0.22em] uppercase mt-0.5">
             Novo Mundo
           </div>
-          <div className="font-serif text-[7px] tracking-[0.2em] uppercase opacity-70 mt-0.5">
+          <div className="font-serif text-[6px] tracking-[0.25em] uppercase opacity-60 mt-1">
             das Escrituras Sagradas
           </div>
         </div>
 
+        {/* Tetragrama hebraico — cinzento escuro, bem visível */}
         <div className="flex flex-col items-center">
           <div
-            className="font-serif text-biblia-douradoBrilho"
+            className="font-serif text-biblia-tetragrama relative"
             style={{
-              fontSize: size === 'sm' ? '32px' : size === 'lg' ? '64px' : '48px',
+              fontSize: size === 'sm' ? '34px' : size === 'lg' ? '70px' : '52px',
               direction: 'rtl',
-              textShadow: '0 0 12px rgba(232, 198, 106, 0.4)',
-              letterSpacing: '2px',
+              letterSpacing: '3px',
+              textShadow:
+                '0 1px 0 rgba(255,255,255,0.25), 0 -1px 0 rgba(0,0,0,0.4)',
+              fontWeight: 700,
             }}
             aria-label="Tetragrama YHWH"
           >
             יהוה
           </div>
-          <div className="font-serif text-[8px] text-biblia-dourado/80 mt-1 tracking-widest">
+          <div className="font-serif text-[7px] text-biblia-tetragrama/70 mt-2 tracking-[0.3em] font-semibold">
             JEOVÁ
           </div>
         </div>
 
-        <div className="text-center text-biblia-dourado/70 text-[7px] tracking-widest uppercase font-serif italic">
+        <div className="text-center text-biblia-texto/60 text-[6px] tracking-[0.25em] uppercase font-serif italic">
           Edição Portugal
         </div>
       </div>
