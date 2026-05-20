@@ -1,23 +1,32 @@
 import { create } from 'zustand';
 import Peer, { type DataConnection } from 'peerjs';
 import type { Action, GameState, PlayerId } from '../engine/types';
-import { applyAction, createInitialState } from '../engine/engine';
+import { applyAction, createInitialState, validateAction } from '../engine/engine';
 import { DECKS } from '../data/decks';
 
 export type Mode = 'hotseat' | 'online' | null;
 
 interface PartyRole { myRole: PlayerId | 'spectator'; }
 
+export type ToastKind = 'erro' | 'info' | 'ok';
+export interface ToastMsg {
+  id: number;
+  text: string;
+  kind: ToastKind;
+}
+
 interface GameStoreState {
   state: GameState | null;
   mode: Mode;
   selectedHandIdx: number | null;
   selectedAttackIdx: number | null;
+  // Avisos didacticos
+  toast: ToastMsg | null;
   // Online (P2P)
   roomId: string | null;
   myRole: PlayerId | 'spectator' | null;
   peer: Peer | null;
-  conn: DataConnection | null;       // host: conexao ao guest; guest: conexao ao host
+  conn: DataConnection | null;
   connecting: boolean;
   connectionError: string | null;
   presentPlayers: Array<{ id: string; role: PlayerId | 'spectator' }>;
@@ -26,15 +35,16 @@ interface GameStoreState {
   connectOnline: (roomId: string, asHost: boolean) => Promise<PartyRole>;
   startOnlineGame: () => void;
   dispatch: (a: Action) => void;
+  tryAction: (a: Action) => boolean;
+  notify: (text: string, kind?: ToastKind) => void;
+  dismissToast: () => void;
   reset: () => void;
   selectHandCard: (idx: number | null) => void;
   selectAttack: (idx: number | null) => void;
 }
 
-// Prefixo para evitar colisao com IDs aleatorios de outras apps no broker publico PeerJS.
 const PEER_PREFIX = 'tcgb-';
 
-// --- protocolo entre host e guest ---
 type Msg =
   | { type: 'ROLE'; myRole: PlayerId | 'spectator' }
   | { type: 'STATE'; state: GameState }
@@ -46,11 +56,14 @@ function safeSend(conn: DataConnection | null, msg: Msg) {
   conn.send(msg);
 }
 
+let _toastId = 0;
+
 export const useGameStore = create<GameStoreState>((set, get) => ({
   state: null,
   mode: null,
   selectedHandIdx: null,
   selectedAttackIdx: null,
+  toast: null,
   roomId: null,
   myRole: null,
   peer: null,
@@ -65,12 +78,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       DECKS.filisteus(),
       seed ?? `s-${Date.now()}`,
     );
-    set({ state: s, mode: 'hotseat', selectedHandIdx: null, selectedAttackIdx: null });
+    set({ state: s, mode: 'hotseat', selectedHandIdx: null, selectedAttackIdx: null, toast: null });
   },
 
   connectOnline: (roomId, asHost) => {
     return new Promise<PartyRole>((resolve, reject) => {
-      // Cleanup anterior
       try { get().conn?.close(); } catch { /* ignore */ }
       try { get().peer?.destroy(); } catch { /* ignore */ }
 
@@ -81,9 +93,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         peer: null, conn: null,
         myRole: null, state: null,
         connecting: true, connectionError: null,
-        presentPlayers: asHost
-          ? [{ id: 'host', role: 'P1' }]
-          : [],
+        presentPlayers: asHost ? [{ id: 'host', role: 'P1' }] : [],
       });
 
       let resolved = false;
@@ -96,7 +106,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }, 15000);
 
       if (asHost) {
-        // P1 (host): cria peer com ID fixo
         const peer = new Peer(peerId, { debug: 1 });
 
         peer.on('open', () => {
@@ -111,7 +120,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         peer.on('error', (err: { type?: string; message?: string }) => {
           const msg =
             err.type === 'unavailable-id' ? 'Codigo de sala ja em uso. Tenta outro.'
-            : err.type === 'network'        ? 'Erro de rede.'
+            : err.type === 'network' ? 'Erro de rede.'
             : err.message || 'Erro PeerJS.';
           set({ connectionError: msg });
           if (!resolved) {
@@ -123,9 +132,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         });
 
         peer.on('connection', (incoming: DataConnection) => {
-          // Aceita apenas 1 jogador (P2). Se ja houver, fecha o novo (sera spectator simples).
           if (get().conn?.open) {
-            // segunda conexao -> spectator
             incoming.on('open', () => {
               safeSend(incoming, { type: 'ROLE', myRole: 'spectator' });
               const cur = get().state;
@@ -174,7 +181,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         });
 
       } else {
-        // P2 (guest): conecta ao peer do host
         const peer = new Peer({ debug: 1 });
 
         peer.on('open', () => {
@@ -182,7 +188,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
           c.on('open', () => {
             set({ peer, conn: c, connecting: false });
-            // role chega via mensagem ROLE do host
           });
 
           c.on('data', (raw: unknown) => {
@@ -206,14 +211,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           });
 
           c.on('close', () => {
-            set({ connectionError: 'Liga\u00e7\u00e3o fechada.', conn: null });
+            set({ connectionError: 'Ligacao fechada.', conn: null });
           });
         });
 
         peer.on('error', (err: { type?: string; message?: string }) => {
           const msg =
             err.type === 'peer-unavailable' ? 'Sala nao encontrada. Verifica o codigo.'
-            : err.type === 'network'         ? 'Erro de rede.'
+            : err.type === 'network' ? 'Erro de rede.'
             : err.message || 'Erro PeerJS.';
           set({ connectionError: msg });
           if (!resolved) {
@@ -236,30 +241,51 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       `s-${get().roomId}-${Date.now()}`,
     );
     const s2 = { ...s, pendingHandoff: false };
-    set({ state: s2, selectedHandIdx: null, selectedAttackIdx: null });
+    set({ state: s2, selectedHandIdx: null, selectedAttackIdx: null, toast: null });
     safeSend(conn, { type: 'STATE', state: s2 });
   },
 
+  // dispatch: aplica a accao sem validar (uso interno / accoes ja validadas).
   dispatch: (a) => {
     const { mode, state, conn, myRole } = get();
     if (mode === 'online') {
       if (!state) return;
       if (state.turnoDe !== myRole) return;
       if (myRole === 'P1') {
-        // host: aplica localmente e faz broadcast
         const next = { ...applyAction(state, a), pendingHandoff: false };
         set({ state: next, selectedHandIdx: null, selectedAttackIdx: null });
         safeSend(conn, { type: 'STATE', state: next });
       } else {
-        // guest: envia para o host
         safeSend(conn, { type: 'ACTION', action: a });
       }
       return;
     }
-    // hotseat
     if (!state) return;
     set({ state: applyAction(state, a), selectedHandIdx: null, selectedAttackIdx: null });
   },
+
+  // tryAction: valida primeiro; se for invalida, mostra um aviso didactico.
+  tryAction: (a) => {
+    const { mode, state, myRole } = get();
+    if (!state) return false;
+    if (mode === 'online' && state.turnoDe !== myRole) {
+      get().notify('Espera — agora e a vez do adversario.', 'erro');
+      return false;
+    }
+    const v = validateAction(state, a);
+    if (!v.ok) {
+      get().notify(v.reason ?? 'Essa jogada nao e permitida agora.', 'erro');
+      return false;
+    }
+    get().dispatch(a);
+    return true;
+  },
+
+  notify: (text, kind = 'info') => {
+    set({ toast: { id: ++_toastId, text, kind } });
+  },
+
+  dismissToast: () => set({ toast: null }),
 
   reset: () => {
     try { get().conn?.close(); } catch { /* ignore */ }
@@ -276,6 +302,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       presentPlayers: [],
       selectedHandIdx: null,
       selectedAttackIdx: null,
+      toast: null,
     });
   },
 

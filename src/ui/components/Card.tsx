@@ -1,166 +1,217 @@
 import type { CardDef, CardInstance, EnergyType, Faccao } from '../../engine/types';
 
-const FACCAO_COLORS: Record<Faccao, { bg: string; border: string; text: string; ribbon: string }> = {
-  Apostolos:  { bg: 'bg-apostolos-50',  border: 'border-apostolos-500',  text: 'text-apostolos-900',  ribbon: 'bg-apostolos-500' },
-  Reis:       { bg: 'bg-reis-50',       border: 'border-reis-500',       text: 'text-reis-900',       ribbon: 'bg-reis-500' },
-  Profetas:   { bg: 'bg-profetas-50',   border: 'border-profetas-500',   text: 'text-profetas-900',   ribbon: 'bg-profetas-500' },
-  Patriarcas: { bg: 'bg-patriarcas-50', border: 'border-patriarcas-500', text: 'text-patriarcas-900', ribbon: 'bg-patriarcas-500' },
-  Juizes:     { bg: 'bg-juizes-50',     border: 'border-juizes-500',     text: 'text-juizes-900',     ribbon: 'bg-juizes-500' },
-  Filisteus:  { bg: 'bg-filisteus-50',  border: 'border-filisteus-500',  text: 'text-filisteus-900',  ribbon: 'bg-filisteus-500' },
-  Egipto:     { bg: 'bg-egipto-50',     border: 'border-egipto-500',     text: 'text-egipto-900',     ribbon: 'bg-egipto-500' },
-  Babilonia:  { bg: 'bg-babilonia-50',  border: 'border-babilonia-500',  text: 'text-babilonia-900',  ribbon: 'bg-babilonia-500' },
-  Canaa:      { bg: 'bg-canaa-50',      border: 'border-canaa-500',      text: 'text-canaa-900',      ribbon: 'bg-canaa-500' },
-  Roma:       { bg: 'bg-roma-50',       border: 'border-roma-500',       text: 'text-roma-900',       ribbon: 'bg-roma-500' },
+// ====================== PALETA POR FACCAO ======================
+const FACCAO: Record<Faccao, { header: string; body: string; borda: string; texto: string }> = {
+  Apostolos:  { header: 'bg-apostolos-500',  body: 'bg-apostolos-50',  borda: 'border-apostolos-500',  texto: 'text-apostolos-900' },
+  Reis:       { header: 'bg-reis-500',       body: 'bg-reis-50',       borda: 'border-reis-500',       texto: 'text-reis-900' },
+  Profetas:   { header: 'bg-profetas-500',   body: 'bg-profetas-50',   borda: 'border-profetas-500',   texto: 'text-profetas-900' },
+  Patriarcas: { header: 'bg-patriarcas-500', body: 'bg-patriarcas-50', borda: 'border-patriarcas-500', texto: 'text-patriarcas-900' },
+  Juizes:     { header: 'bg-juizes-500',     body: 'bg-juizes-50',     borda: 'border-juizes-500',     texto: 'text-juizes-900' },
+  Filisteus:  { header: 'bg-filisteus-500',  body: 'bg-filisteus-50',  borda: 'border-filisteus-500',  texto: 'text-filisteus-900' },
+  Egipto:     { header: 'bg-egipto-500',     body: 'bg-egipto-50',     borda: 'border-egipto-500',     texto: 'text-egipto-900' },
+  Babilonia:  { header: 'bg-babilonia-500',  body: 'bg-babilonia-50',  borda: 'border-babilonia-500',  texto: 'text-babilonia-900' },
+  Canaa:      { header: 'bg-canaa-500',      body: 'bg-canaa-50',      borda: 'border-canaa-500',      texto: 'text-canaa-900' },
+  Roma:       { header: 'bg-roma-500',       body: 'bg-roma-50',       borda: 'border-roma-500',       texto: 'text-roma-900' },
 };
 
-const ENERGY_COLOR: Record<EnergyType, string> = {
-  Generica:  'bg-stone-400 text-stone-50',
-  Fe:        'bg-amber-300 text-amber-900',
-  Coragem:   'bg-rose-400 text-rose-50',
-  Sabedoria: 'bg-indigo-400 text-indigo-50',
-  Pregacao:  'bg-sky-400 text-sky-50',
-  Zelo:      'bg-orange-500 text-orange-50',
-  Dominio:   'bg-stone-700 text-stone-100',
+const NEUTRO = { header: 'bg-tinta-suave', body: 'bg-pergaminho-claro', borda: 'border-tinta-suave', texto: 'text-tinta' };
+
+// ====================== ENERGIA ======================
+const ENERGIA: Record<EnergyType, { cor: string; label: string; nome: string }> = {
+  Generica:  { cor: 'bg-stone-400 text-white',     label: '◆',  nome: 'Generica' },
+  Fe:        { cor: 'bg-amber-300 text-amber-900', label: 'Fe', nome: 'Fe' },
+  Coragem:   { cor: 'bg-rose-400 text-white',      label: 'Co', nome: 'Coragem' },
+  Sabedoria: { cor: 'bg-indigo-400 text-white',    label: 'Sa', nome: 'Sabedoria' },
+  Pregacao:  { cor: 'bg-sky-500 text-white',       label: 'Pr', nome: 'Pregacao' },
+  Zelo:      { cor: 'bg-orange-500 text-white',    label: 'Ze', nome: 'Zelo' },
+  Dominio:   { cor: 'bg-stone-700 text-white',     label: 'Do', nome: 'Dominio' },
 };
 
-const ENERGY_LABEL: Record<EnergyType, string> = {
-  Generica:  '●',
-  Fe:        'Fé',
-  Coragem:   'Cor',
-  Sabedoria: 'Sab',
-  Pregacao:  'Preg',
-  Zelo:      'Zelo',
-  Dominio:   'Dom',
-};
-
-export function EnergyChip({ tipo, small }: { tipo: EnergyType; small?: boolean }) {
+export function EnergyChip({ tipo, size = 'md' }: { tipo: EnergyType; size?: 'xs' | 'md' }) {
+  const e = ENERGIA[tipo];
+  const dim = size === 'xs' ? 'w-4 h-4 text-[8px]' : 'w-5 h-5 text-[10px]';
   return (
     <span
-      className={`inline-flex items-center justify-center ${
-        small ? 'w-4 h-4 text-[9px]' : 'w-6 h-6 text-[11px]'
-      } font-bold rounded-full ${ENERGY_COLOR[tipo]} shadow-sm`}
-      title={tipo}
+      className={`inline-flex items-center justify-center ${dim} font-bold rounded-full ${e.cor} shadow-sm ring-1 ring-black/10`}
+      title={e.nome}
     >
-      {ENERGY_LABEL[tipo]}
+      {e.label}
     </span>
   );
 }
 
+// ====================== CARTA ======================
 interface CardProps {
   def: CardDef;
   instance?: CardInstance;
   size?: 'sm' | 'md' | 'lg';
   selected?: boolean;
-  faded?: boolean;
+  highlight?: boolean;       // alvo valido (anel dourado)
+  attackTarget?: boolean;    // inimigo atacavel (anel vermelho)
+  dim?: boolean;             // esbatida (nao interativa)
   onClick?: () => void;
   onAttackClick?: (idx: number) => void;
   selectedAttackIdx?: number | null;
 }
 
-export function Card({ def, instance, size = 'md', selected, faded, onClick, onAttackClick, selectedAttackIdx }: CardProps) {
-  const dims = size === 'sm' ? 'w-28 h-40 text-[10px]' : size === 'lg' ? 'w-52 h-80 text-sm' : 'w-40 h-60 text-xs';
-  const colors = def.faccao ? FACCAO_COLORS[def.faccao] : {
-    bg: 'bg-stone-50', border: 'border-stone-400', text: 'text-stone-900', ribbon: 'bg-stone-500',
-  };
-  const baseStyle = `relative ${dims} ${colors.bg} ${colors.text} border-2 ${colors.border}
-    rounded-md shadow-md overflow-hidden flex flex-col cursor-pointer
-    transition-all hover:shadow-lg hover:-translate-y-0.5`;
-  const ring = selected ? 'ring-4 ring-amber-400' : '';
-  const fade = faded ? 'opacity-60 grayscale' : '';
+const SIZE = {
+  sm: { w: 'w-[8.6rem]', h: 'h-[12.2rem]', name: 'text-[11.5px]', body: 'text-[9px]', big: 'text-base' },
+  md: { w: 'w-[11.2rem]', h: 'h-[15.8rem]', name: 'text-[14px]', body: 'text-[10.5px]', big: 'text-xl' },
+  lg: { w: 'w-[14rem]', h: 'h-[19.6rem]', name: 'text-[17px]', body: 'text-[12px]', big: 'text-2xl' },
+};
 
+export function Card({
+  def, instance, size = 'md', selected, highlight, attackTarget, dim,
+  onClick, onAttackClick, selectedAttackIdx,
+}: CardProps) {
+  const s = SIZE[size];
+  const pal = def.faccao ? FACCAO[def.faccao] : NEUTRO;
+
+  const ring =
+    selected ? 'ring-4 ring-ouro shadow-xl'
+    : attackTarget ? 'ring-4 ring-rose-500 shadow-xl animate-coach-glow'
+    : highlight ? 'ring-4 ring-ouro-claro shadow-lg'
+    : 'ring-1 ring-black/10';
+
+  const wrap = `relative ${s.w} ${s.h} rounded-xl overflow-hidden flex flex-col
+    border ${pal.borda} ${ring} ${dim ? 'opacity-55 saturate-50' : ''}
+    ${onClick ? 'cursor-pointer transition-transform hover:-translate-y-1' : ''}
+    shadow-md select-none`;
+
+  // ---------- ENERGIA ----------
   if (def.tipo === 'Energia') {
+    const e = def.fornecesEnergia ? ENERGIA[def.fornecesEnergia] : null;
     return (
-      <div className={`${baseStyle} ${ring} ${fade} items-center justify-center`} onClick={onClick}>
-        <div className="absolute top-2 left-2 right-2 font-serif font-bold text-center truncate">{def.nome}</div>
-        {def.fornecesEnergia && <EnergyChip tipo={def.fornecesEnergia} />}
-        <div className="absolute bottom-2 left-2 right-2 text-[9px] italic text-center text-stone-600 line-clamp-2">{def.flavor}</div>
-      </div>
-    );
-  }
-
-  if (def.tipo === 'Evento' || def.tipo === 'Estrutura') {
-    return (
-      <div className={`${baseStyle} ${ring} ${fade} px-2 py-1.5`} onClick={onClick}>
-        <div className="flex justify-between items-start gap-1">
-          <span className="font-serif font-bold leading-tight">{def.nome}</span>
-          <span className="text-[10px] uppercase tracking-wide bg-stone-200 px-1 rounded">
-            {def.tipo === 'Evento' ? def.subtipo ?? 'Ev' : 'Estr'}
-          </span>
+      <div className={`${wrap} bg-gradient-to-b from-pergaminho-claro to-pergaminho-medio`} onClick={onClick}>
+        <div className="px-2 pt-2 text-center">
+          <div className={`font-serif font-bold ${s.name} text-tinta`}>Energia</div>
+          <div className={`${s.body} text-tinta-suave`}>{e?.nome ?? def.nome}</div>
         </div>
-        <div className={`h-1 w-full my-1 rounded ${colors.ribbon}`} />
-        <p className="text-[10px] leading-snug flex-1 overflow-hidden">{def.efeitoTexto}</p>
-        <p className="text-[9px] italic text-stone-500 line-clamp-2 mt-1">{def.flavor}</p>
+        <div className="flex-1 flex items-center justify-center">
+          {def.fornecesEnergia && (
+            <div className={`${e?.cor} rounded-full ${size === 'sm' ? 'w-14 h-14 text-xl' : 'w-20 h-20 text-3xl'}
+              flex items-center justify-center font-bold shadow-lg ring-2 ring-black/10`}>
+              {e?.label}
+            </div>
+          )}
+        </div>
+        <div className={`px-2 pb-2 ${s.body} italic text-tinta-fraca text-center leading-tight line-clamp-2`}>
+          {def.flavor}
+        </div>
       </div>
     );
   }
 
-  // Fiel / Adversario
-  const hpMax = def.hp ?? 0;
+  // ---------- EVENTO / ESTRUTURA ----------
+  if (def.tipo === 'Evento' || def.tipo === 'Estrutura') {
+    const etiqueta = def.tipo === 'Evento' ? (def.subtipo ?? 'Evento') : 'Estrutura';
+    return (
+      <div className={`${wrap} ${pal.body}`} onClick={onClick}>
+        <div className={`${pal.header} text-white px-2 py-1.5`}>
+          <div className={`font-serif font-bold ${s.name} leading-tight`}>{def.nome}</div>
+          <div className="text-[8px] uppercase tracking-[0.15em] opacity-80">{etiqueta}</div>
+        </div>
+        <div className={`flex-1 px-2 py-2 ${s.body} ${pal.texto} leading-snug`}>
+          {def.efeitoTexto}
+        </div>
+        <div className={`px-2 pb-2 ${s.body} italic text-tinta-fraca leading-tight line-clamp-2`}>
+          {def.flavor}
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- FIEL / ADVERSARIO ----------
+  const hpBase = def.hp ?? 0;
+  const hpMax = hpBase + (instance?.hpMaximoBonus ?? 0);
   const hpAtual = instance?.hpRestante ?? hpMax;
-  const hpBonus = instance?.hpMaximoBonus ?? 0;
+  const hpPct = hpMax > 0 ? Math.max(0, Math.min(100, (hpAtual / hpMax) * 100)) : 0;
+  const hpCor = hpPct > 60 ? 'bg-emerald-500' : hpPct > 30 ? 'bg-amber-500' : 'bg-rose-500';
+
   return (
-    <div className={`${baseStyle} ${ring} ${fade} px-2 py-1.5`} onClick={onClick}>
-      <div className="flex justify-between items-start gap-1">
-        <span className="font-serif font-bold leading-tight">{def.nome}</span>
-        <span className="font-sans font-bold text-rose-700 whitespace-nowrap">
-          HP {hpAtual}/{hpMax + hpBonus}
+    <div className={`${wrap} ${pal.body}`} onClick={onClick}>
+      {/* Cabecalho */}
+      <div className={`${pal.header} text-white px-2 py-1 flex items-center justify-between gap-1`}>
+        <span className={`font-serif font-bold ${s.name} leading-tight truncate`}>{def.nome}</span>
+        <span className="shrink-0 bg-white/95 rounded-full px-1.5 py-0.5 text-rose-700 font-extrabold text-[10px] leading-none">
+          {hpAtual}<span className="text-tinta-fraca font-semibold">/{hpMax}</span>
         </span>
       </div>
-      <div className={`h-1 w-full my-1 rounded ${colors.ribbon}`} />
-      <div className="flex flex-wrap gap-1 items-center text-[9px] uppercase tracking-wide">
-        <span>{def.faccao}</span>
-        {def.tags.map((t) => (
-          <span key={t} className="bg-stone-200 px-1 rounded">{t}</span>
-        ))}
-        {def.evolucaoDe && <span className="bg-amber-200 px-1 rounded">Promovido</span>}
-      </div>
 
-      {instance && instance.energiasAnexadas.length > 0 && (
-        <div className="flex gap-0.5 mt-1 flex-wrap">
-          {instance.energiasAnexadas.map((e, i) => <EnergyChip key={i} tipo={e} small />)}
+      {/* Barra de HP (so instancias em jogo) */}
+      {instance && (
+        <div className="h-1.5 bg-black/15">
+          <div className={`h-full ${hpCor} transition-all`} style={{ width: `${hpPct}%` }} />
         </div>
       )}
 
-      <div className="flex-1 mt-1 space-y-1 overflow-hidden">
-        {def.ataques?.map((a, i) => {
-          const isSelected = selectedAttackIdx === i;
-          return (
-            <div
-              key={i}
-              onClick={onAttackClick ? (e) => { e.stopPropagation(); onAttackClick(i); } : undefined}
-              className={`border-t border-stone-300/60 pt-1 ${onAttackClick ? 'hover:bg-amber-100/60 rounded' : ''}
-                          ${isSelected ? 'bg-amber-200/80 ring-2 ring-amber-500 rounded' : ''}`}
-            >
-              <div className="flex justify-between items-start gap-1">
-                <div className="flex items-center gap-1 flex-wrap">
-                  {a.custo.map((e, j) => <EnergyChip key={j} tipo={e} small />)}
-                  <span className="font-semibold">{a.nome}</span>
-                </div>
-                <span className="font-bold">{a.dano > 0 ? a.dano : '—'}</span>
-              </div>
-              {a.texto && <div className="text-[9px] italic text-stone-600 leading-tight">{a.texto}</div>}
-            </div>
-          );
-        })}
-      </div>
+      <div className={`flex-1 flex flex-col gap-1 px-1.5 py-1.5 ${pal.texto}`}>
+        {/* Tags */}
+        <div className="flex flex-wrap gap-0.5 items-center text-[8px] uppercase tracking-wide">
+          <span className="font-bold opacity-70">{def.faccao}</span>
+          {def.tags.map((t) => (
+            <span key={t} className="bg-black/10 rounded px-1 py-px">{t}</span>
+          ))}
+          {def.evolucaoDe && <span className="bg-ouro/25 text-ouro-escuro rounded px-1 py-px font-bold">Promovido</span>}
+        </div>
 
-      {def.efeitoTexto && (
-        <p className="text-[9px] text-stone-700 leading-tight mt-1 border-t border-stone-300/60 pt-1">
-          {def.efeitoTexto}
-        </p>
-      )}
-
-      <div className="flex justify-between items-end mt-1">
-        <span className="text-[9px] italic text-stone-500 line-clamp-2 flex-1 pr-1">{def.flavor}</span>
-        {def.retirada !== undefined && (
-          <span className="text-[9px] whitespace-nowrap">Ret: {def.retirada}</span>
+        {/* Energia anexada */}
+        {instance && instance.energiasAnexadas.length > 0 && (
+          <div className="flex flex-wrap gap-0.5">
+            {instance.energiasAnexadas.map((e, i) => <EnergyChip key={i} tipo={e} size="xs" />)}
+          </div>
         )}
+
+        {/* Ataques */}
+        <div className="flex-1 flex flex-col gap-1">
+          {def.ataques?.map((a, i) => {
+            const sel = selectedAttackIdx === i;
+            return (
+              <div
+                key={i}
+                onClick={onAttackClick ? (ev) => { ev.stopPropagation(); onAttackClick(i); } : undefined}
+                className={`rounded-md border border-black/10 px-1.5 py-1 bg-white/55
+                  ${onAttackClick ? 'cursor-pointer hover:bg-ouro-claro/30' : ''}
+                  ${sel ? 'bg-ouro-claro/60 ring-2 ring-ouro' : ''}`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-0.5 flex-wrap">
+                    {a.custo.map((e, j) => <EnergyChip key={j} tipo={e} size="xs" />)}
+                    <span className={`font-bold ${s.body}`}>{a.nome}</span>
+                  </div>
+                  <span className={`font-extrabold ${s.big} leading-none`}>{a.dano > 0 ? a.dano : '—'}</span>
+                </div>
+                {a.texto && size !== 'sm' && (
+                  <div className="text-[8.5px] italic text-tinta-suave leading-tight mt-0.5">{a.texto}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Efeito passivo */}
+        {def.efeitoTexto && size !== 'sm' && (
+          <div className="text-[8.5px] leading-tight bg-black/5 rounded px-1 py-0.5">{def.efeitoTexto}</div>
+        )}
+
+        {/* Rodape */}
+        <div className="flex items-end justify-between gap-1">
+          <span className="text-[8px] italic text-tinta-fraca leading-tight line-clamp-2 flex-1">{def.flavor}</span>
+          {def.retirada !== undefined && (
+            <span className="shrink-0 text-[8px] text-tinta-suave" title="Custo de retirada">
+              Retirar: {def.retirada}
+            </span>
+          )}
+        </div>
       </div>
 
+      {/* Estados */}
       {instance?.estados && instance.estados.length > 0 && (
-        <div className="absolute top-1 right-1 flex gap-0.5">
+        <div className="absolute top-7 right-1 flex flex-col gap-0.5 items-end">
           {instance.estados.map((e) => (
-            <span key={e} className="text-[8px] bg-rose-700 text-white px-1 rounded shadow">{e}</span>
+            <span key={e} className="text-[7.5px] uppercase font-bold bg-rose-700 text-white px-1 py-px rounded shadow">
+              {e}
+            </span>
           ))}
         </div>
       )}
@@ -168,67 +219,52 @@ export function Card({ def, instance, size = 'md', selected, faded, onClick, onA
   );
 }
 
+// ====================== COSTAS (Biblia cinzenta) ======================
 export function CardBack({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const dims = size === 'sm' ? 'w-28 h-40' : size === 'lg' ? 'w-52 h-80' : 'w-40 h-60';
+  const dims = size === 'sm' ? 'w-[8.6rem] h-[12.2rem]' : size === 'lg' ? 'w-[14rem] h-[19.6rem]' : 'w-[11.2rem] h-[15.8rem]';
   return (
-    <div className={`${dims} relative rounded-md overflow-hidden border border-biblia-borda shadow-lg bg-biblia-capa`}>
-      {/* Brilho lateral muito subtil (vinheta) */}
+    <div className={`${dims} relative rounded-xl overflow-hidden border border-biblia-borda shadow-md bg-biblia-capa`}>
       <div
         className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.08) 0%, transparent 55%, rgba(0,0,0,0.18) 100%)',
+            'radial-gradient(ellipse at 50% 45%, rgba(255,255,255,0.10) 0%, transparent 55%, rgba(0,0,0,0.20) 100%)',
         }}
       />
-      {/* Padrão de "tecido" subtilíssimo */}
       <div
         className="absolute inset-0 opacity-25 mix-blend-multiply pointer-events-none"
         style={{
-          backgroundImage:
-            'radial-gradient(circle, rgba(0,0,0,0.25) 0.5px, transparent 0.5px)',
+          backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.25) 0.5px, transparent 0.5px)',
           backgroundSize: '4px 4px',
         }}
       />
-      {/* Moldura embutida */}
-      <div className="absolute inset-[6px] border border-biblia-tetragramaSombra/40 rounded-sm" />
-      <div className="absolute inset-[9px] border border-white/15 rounded-sm" />
+      <div className="absolute inset-[6px] border border-biblia-tetragramaSombra/40 rounded-md" />
+      <div className="absolute inset-[9px] border border-white/15 rounded-md" />
 
       <div className="absolute inset-0 flex flex-col items-center justify-between py-5">
         <div className="text-center text-biblia-texto">
-          <div className="font-serif text-[8px] tracking-[0.22em] uppercase opacity-80">
-            Tradução do
-          </div>
-          <div className="font-serif text-[11px] font-bold tracking-[0.22em] uppercase mt-0.5">
-            Novo Mundo
-          </div>
-          <div className="font-serif text-[6px] tracking-[0.25em] uppercase opacity-60 mt-1">
-            das Escrituras Sagradas
-          </div>
+          <div className="font-serif text-[8px] tracking-[0.22em] uppercase opacity-80">Traducao do</div>
+          <div className="font-serif text-[11px] font-bold tracking-[0.22em] uppercase mt-0.5">Novo Mundo</div>
+          <div className="font-serif text-[6px] tracking-[0.25em] uppercase opacity-60 mt-1">das Escrituras Sagradas</div>
         </div>
-
-        {/* Tetragrama hebraico — cinzento escuro, bem visível */}
         <div className="flex flex-col items-center">
           <div
-            className="font-serif text-biblia-tetragrama relative"
+            className="font-serif text-biblia-tetragrama"
             style={{
-              fontSize: size === 'sm' ? '34px' : size === 'lg' ? '70px' : '52px',
+              fontSize: size === 'sm' ? '34px' : size === 'lg' ? '66px' : '50px',
               direction: 'rtl',
               letterSpacing: '3px',
-              textShadow:
-                '0 1px 0 rgba(255,255,255,0.25), 0 -1px 0 rgba(0,0,0,0.4)',
+              textShadow: '0 1px 0 rgba(255,255,255,0.25), 0 -1px 0 rgba(0,0,0,0.4)',
               fontWeight: 700,
             }}
             aria-label="Tetragrama YHWH"
           >
             יהוה
           </div>
-          <div className="font-serif text-[7px] text-biblia-tetragrama/70 mt-2 tracking-[0.3em] font-semibold">
-            JEOVÁ
-          </div>
+          <div className="font-serif text-[7px] text-biblia-tetragrama/70 mt-2 tracking-[0.3em] font-semibold">JEOVA</div>
         </div>
-
         <div className="text-center text-biblia-texto/60 text-[6px] tracking-[0.25em] uppercase font-serif italic">
-          Edição Portugal
+          Edicao Portugal
         </div>
       </div>
     </div>

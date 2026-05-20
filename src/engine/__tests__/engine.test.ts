@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, applyAction, newIid, resetIidCounter } from '../engine';
+import { createInitialState, applyAction, newIid, resetIidCounter, validateAction } from '../engine';
 import type { GameState, CardDef, Faccao } from '../types';
 import { getCard } from '../../data/cards';
 import { DECKS } from '../../data/decks';
@@ -176,5 +176,42 @@ describe('Vitoria', () => {
     const s2 = applyAction(s, { type: 'ATTACK', ataqueIdx: 0 });
     expect(s2.vencedor).toBe('P1');
     expect(s2.motivoVitoria).toBe('talentos');
+  });
+});
+
+describe('validateAction (avisos didacticos)', () => {
+  it('AURORA_DRAW e valida na fase aurora', () => {
+    const s = createInitialState(DECKS.apostolos(), DECKS.filisteus(), 'va-1');
+    expect(validateAction(s, { type: 'AURORA_DRAW' }).ok).toBe(true);
+  });
+
+  it('jogar uma carta antes da Aurora avisa para comprar primeiro', () => {
+    const s = createInitialState(DECKS.apostolos(), DECKS.filisteus(), 'va-2');
+    const r = validateAction(s, { type: 'PLAY_BASIC', cardIdx: 0, slot: 'emConfronto' });
+    expect(r.ok).toBe(false);
+    expect(r.reason ?? '').toMatch(/Comprar/i);
+  });
+
+  it('comprar duas vezes no mesmo turno e invalido', () => {
+    const s0 = createInitialState(DECKS.apostolos(), DECKS.filisteus(), 'va-3');
+    const s1 = applyAction(s0, { type: 'AURORA_DRAW' });
+    expect(validateAction(s1, { type: 'AURORA_DRAW' }).ok).toBe(false);
+  });
+
+  it('jogar um Fiel Basico na fase de acao e valido', () => {
+    const s0 = createInitialState(DECKS.apostolos(), DECKS.filisteus(), 'va-4');
+    const s1 = applyAction(s0, { type: 'AURORA_DRAW' });
+    const me = s1.jogadores[s1.turnoDe];
+    const idx = me.mao.findIndex((c) => (c.tipo === 'Fiel' || c.tipo === 'Adversario') && !c.evolucaoDe);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(validateAction(s1, { type: 'PLAY_BASIC', cardIdx: idx, slot: 'emConfronto' }).ok).toBe(true);
+  });
+
+  it('atacar sem Fiel Em Confronto avisa o jogador', () => {
+    const s0 = createInitialState(DECKS.apostolos(), DECKS.filisteus(), 'va-5');
+    const s1 = applyAction(s0, { type: 'AURORA_DRAW' });
+    const r = validateAction(s1, { type: 'ATTACK', ataqueIdx: 0 });
+    expect(r.ok).toBe(false);
+    expect(r.reason ?? '').toMatch(/Em Confronto/i);
   });
 });

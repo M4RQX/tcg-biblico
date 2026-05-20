@@ -261,7 +261,7 @@ function processarPassivos(state: GameState, pid: PlayerId): GameState {
 
 // ====================== CUSTO DE ENERGIA ======================
 
-function podePagarCusto(disponivel: EnergyType[], custo: EnergyType[]): boolean {
+export function podePagarCusto(disponivel: EnergyType[], custo: EnergyType[]): boolean {
   const restante = [...disponivel];
   const especificos = custo.filter((e) => e !== 'Generica');
   const genericos = custo.filter((e) => e === 'Generica').length;
@@ -348,6 +348,139 @@ function endTurn(s: GameState): GameState {
   };
   s2 = log(s2, next, `--- Vez de ${next} (turno ${s2.numeroTurno}) ---`);
   return s2;
+}
+
+// ====================== VALIDACAO (mensagens didacticas) ======================
+
+export interface ValidationResult {
+  ok: boolean;
+  reason?: string;
+}
+
+const MSG_AURORA =
+  'Primeiro tens de comprar a carta do turno. Clica no botao "Comprar carta" (fase Aurora).';
+
+// Verifica se uma accao e legal e, se nao for, devolve uma explicacao em linguagem simples.
+export function validateAction(state: GameState, action: Action): ValidationResult {
+  if (state.vencedor) return { ok: false, reason: 'A partida ja terminou.' };
+  const pid = state.turnoDe;
+  const me = state.jogadores[pid];
+
+  switch (action.type) {
+    case 'COMPLETE_HANDOFF':
+      return { ok: true };
+
+    case 'AURORA_DRAW':
+      if (state.fase !== 'aurora')
+        return { ok: false, reason: 'Ja compraste a carta deste turno. Agora joga as tuas cartas.' };
+      return { ok: true };
+
+    case 'END_TURN':
+      return { ok: true };
+
+    case 'PLAY_BASIC': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      const carta = me.mao[action.cardIdx];
+      if (!carta) return { ok: false, reason: 'Essa carta ja nao esta na tua mao.' };
+      if (carta.tipo === 'Energia')
+        return { ok: false, reason: `"${carta.nome}" e uma Energia. Liga-a a um Fiel teu, nao a um espaco vazio.` };
+      if (carta.tipo === 'Evento' || carta.tipo === 'Estrutura')
+        return { ok: false, reason: `"${carta.nome}" nao e um Fiel — nao pode ir para o campo de batalha.` };
+      if (carta.evolucaoDe)
+        return { ok: false, reason: `"${carta.nome}" e uma Promocao. Primeiro joga o Fiel Basico, depois promove-o.` };
+      if (action.slot === 'emConfronto' && me.emConfronto)
+        return { ok: false, reason: 'Ja tens um Fiel Em Confronto. Coloca este na Companhia (reserva).' };
+      if (action.slot === 'companhia' && me.companhia.length >= 5)
+        return { ok: false, reason: 'A Companhia esta cheia (maximo 5 Fieis).' };
+      return { ok: true };
+    }
+
+    case 'PROMOTE': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      const promo = me.mao[action.cardIdx];
+      if (!promo) return { ok: false, reason: 'Essa carta ja nao esta na tua mao.' };
+      if (!promo.evolucaoDe)
+        return { ok: false, reason: `"${promo.nome}" nao e uma carta de Promocao.` };
+      const alvo = findInstance(me, action.targetIid);
+      if (!alvo) return { ok: false, reason: 'Escolhe um Fiel teu para promover.' };
+      const ultimoDef = alvo.evolucoes[alvo.evolucoes.length - 1];
+      if (ultimoDef !== promo.evolucaoDe) {
+        const base = getCard(promo.evolucaoDe);
+        return { ok: false, reason: `"${promo.nome}" so promove "${base.nome}".` };
+      }
+      if (alvo.turnoEntrouEmJogo >= state.numeroTurno)
+        return { ok: false, reason: 'Esse Fiel entrou agora em jogo. So o podes promover no proximo turno.' };
+      return { ok: true };
+    }
+
+    case 'ATTACH_ENERGY': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      if (me.energiaAnexadaEsteTurno)
+        return { ok: false, reason: 'Ja ligaste uma Energia este turno (limite: 1 por turno).' };
+      const carta = me.mao[action.cardIdx];
+      if (!carta) return { ok: false, reason: 'Essa carta ja nao esta na tua mao.' };
+      if (carta.tipo !== 'Energia')
+        return { ok: false, reason: `"${carta.nome}" nao e uma carta de Energia.` };
+      const alvo = findInstance(me, action.targetIid);
+      if (!alvo) return { ok: false, reason: 'Escolhe um Fiel teu para receber a Energia.' };
+      return { ok: true };
+    }
+
+    case 'PLAY_EVENT': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      const carta = me.mao[action.cardIdx];
+      if (!carta) return { ok: false, reason: 'Essa carta ja nao esta na tua mao.' };
+      if (carta.tipo !== 'Evento')
+        return { ok: false, reason: `"${carta.nome}" nao e um Evento.` };
+      if (carta.subtipo === 'Apoio' && me.apoioJogadoEsteTurno)
+        return { ok: false, reason: 'Ja jogaste um Apoio este turno (limite: 1 por turno).' };
+      if (carta.id === 'oracao' && !action.alvoIid)
+        return { ok: false, reason: 'Escolhe o Fiel teu que queres curar.' };
+      return { ok: true };
+    }
+
+    case 'PLAY_STRUCTURE': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      const carta = me.mao[action.cardIdx];
+      if (!carta) return { ok: false, reason: 'Essa carta ja nao esta na tua mao.' };
+      if (carta.tipo !== 'Estrutura')
+        return { ok: false, reason: `"${carta.nome}" nao e uma Estrutura.` };
+      return { ok: true };
+    }
+
+    case 'RETIRE': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      if (!me.emConfronto)
+        return { ok: false, reason: 'Nao tens nenhum Fiel Em Confronto para retirar.' };
+      const novo = me.companhia.find((c) => c.iid === action.novoIid);
+      if (!novo) return { ok: false, reason: 'Escolhe um Fiel da Companhia para entrar no lugar.' };
+      const def = getCard(me.emConfronto.defId);
+      const custo = def.retirada ?? 0;
+      if (me.emConfronto.energiasAnexadas.length < custo)
+        return { ok: false, reason: `Falta Energia para retirar "${def.nome}" (custo de retirada: ${custo}).` };
+      return { ok: true };
+    }
+
+    case 'ATTACK': {
+      if (state.fase !== 'acao') return { ok: false, reason: MSG_AURORA };
+      if (!me.emConfronto)
+        return { ok: false, reason: 'Nao tens nenhum Fiel Em Confronto para atacar.' };
+      if (me.emConfronto.estados.includes('paralisado'))
+        return { ok: false, reason: 'O teu Fiel esta paralisado e nao pode atacar este turno.' };
+      if (me.emConfronto.estados.includes('envergonhado'))
+        return { ok: false, reason: 'O teu Fiel esta envergonhado e nao pode atacar este turno.' };
+      const def = getCard(me.emConfronto.defId);
+      const ataque = def.ataques?.[action.ataqueIdx];
+      if (!ataque) return { ok: false, reason: 'Esse ataque nao existe.' };
+      if (!podePagarCusto(me.emConfronto.energiasAnexadas, ataque.custo))
+        return { ok: false, reason: `Falta Energia para "${ataque.nome}". Liga mais Energia ao teu Fiel primeiro.` };
+      const adv = state.jogadores[opp(pid)];
+      if (!adv.emConfronto)
+        return { ok: false, reason: 'O adversario nao tem Fiel Em Confronto para atacares.' };
+      return { ok: true };
+    }
+  }
+  return { ok: true };
 }
 
 export function applyAction(state: GameState, action: Action): GameState {
